@@ -6,3 +6,14 @@ The enron folder contains a script to do the following:
 * Extract all attachments present in the EML files (recursively)
 * Delete all not Excel related files (also leave the EML files) (recursively)
 * Move the Excel sheets into one directory
+
+This script is developed using Ubuntu 20.04. In order to execute this script, you need the
+following additional packages installed:
+* pst-tools (for converting PST files into EML files)
+* mpack containing the munpack executable (for extracting attachments from the EML files)
+
+### Installation of additional packages
+When using Ubuntu (or any debian based distributions), the above packages can be installed using
+the following line in a terminal:
+
+> sudo apt install pst-tools munpack
