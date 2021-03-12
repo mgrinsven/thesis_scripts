@@ -1,0 +1,80 @@
+#!/bin/bash
+
+CURRENT_DIR=$PWD
+UNZIP_DIR=$CURRENT_DIR/PST
+INCLUDE_EXT="*.xla *.xlk *.xll *.xls *.xlt *.xlw"
+EXCLUDE_EXT="!(*.eml|*.xla|*.xlk|*.xll|*.xls|*.xlt|*.xlw)"
+#EXCLUDE_EXT="!(*.eml)"
+
+declare -a arr=("*.xla" "*.xlk" "*.xll" "*.xls" "*.xlt" "*.xlw" "*.XLS" "*.XLT")
+
+extract_zip () {
+    unzip -d $UNZIP_DIR \*.zip
+}
+
+check_dir () {
+    if [ ! -d "$1" ]; then
+        printf 'Directory %s does not exist, creating\n' "$1"
+        mkdir $1
+    fi
+}
+
+walk_dir () {
+    shopt -s nullglob dotglob
+    printf 'Yo what is this %s\n' "$2"
+    for pathname in "$1"/*; do
+        if [ -d "$pathname" ]; then
+            CURRENT_DIR=$pathname
+            walk_dir "$pathname" "$2"
+        else
+            if [[ $pathname == *.eml ]]; then
+                if [[ $2 == EXTRACT ]]; then
+                    printf 'EML file found %s\n' "$pathname"
+#                    munpack -C"$CURRENT_DIR" "$pathname"
+                    munpack -f -C"$CURRENT_DIR" "$pathname"
+                fi
+            else
+                if [[ $pathname == *.pst ]]; then
+                    if [[ $2 == EXTRACT_EML ]]; then
+                        printf 'PST file found %s\n' "$pathname"
+                        readpst -D -j 8 -e -o $PWD/maildir "$pathname"
+                    fi
+                fi
+            fi
+        fi
+    done
+}
+
+
+# We are only interested in Excel sheets, so delete all other files
+# except the eml and excel files
+clean_up () {
+    shopt -s extglob
+    for pathname in "$1"/*; do
+        if [ -d "$pathname" ]; then
+            printf 'lets delete stuff: %s\n' "$pathname/$EXCLUDE_EXT"
+            rm "$pathname"/$EXCLUDE_EXT
+            clean_up "$pathname"
+        fi
+    done
+}
+
+move_sheets () {
+    for pathname in "$1"/*; do
+        if [ -d "$pathname" ]; then
+            for i in "${arr[@]}"; do
+                printf 'lets move stuff: %s\n' "$pathname/$i"
+                mv "$pathname"/$i $2
+            done
+            move_sheets "$pathname" "$2"
+        fi
+    done
+}
+
+extract_zip
+check_dir "$PWD/maildir"
+walk_dir "$PWD" "EXTRACT_EML"
+walk_dir "$PWD/maildir" "EXTRACT"
+clean_up "$PWD/maildir"
+check_dir "$PWD/extracted_files"
+move_sheets "$PWD/maildir" "$PWD/extracted_files"
