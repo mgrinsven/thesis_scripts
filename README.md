@@ -16,4 +16,4 @@ following additional packages installed:
 When using Ubuntu (or any debian based distributions), the above packages can be installed using
 the following line in a terminal:
 
-> sudo apt install pst-tools munpack
+> sudo apt install pst-tools mpack
