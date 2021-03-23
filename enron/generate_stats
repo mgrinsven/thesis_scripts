@@ -1,0 +1,30 @@
+#!/bin/bash
+
+TOTAL_EML_FILES=0
+TOTAL_ATTACHMENTS=0
+TOTAL_SPREADSHEETS=0
+
+walk_dir () {
+    shopt -s nullglob dotglob extglob
+    for pathname in "$1"/*; do
+        if [ -d "$pathname" ]; then
+            walk_dir "$pathname"
+        else
+            if [[ $pathname == *.eml ]]; then
+              echo "Found EML file $pathname"
+              TOTAL_EML_FILES=$((TOTAL_EML_FILES+1))
+            else
+              TOTAL_ATTACHMENTS=$((TOTAL_ATTACHMENTS+1))
+              if [[ $pathname == *.xls || $pathname == *.XLS ]]; then
+                echo "Found a spreadsheet $pathname"
+                TOTAL_SPREADSHEETS=$((TOTAL_SPREADSHEETS+1))
+              fi
+            fi
+        fi
+    done
+}
+
+walk_dir "$PWD"
+echo "Total EML          $TOTAL_EML_FILES"
+echo "Total Attacthments $TOTAL_ATTACHMENTS"
+echo "Total spreadsheets $TOTAL_SPREADSHEETS"

@@ -9,11 +9,11 @@ The enron folder contains a script to do the following:
 
 This script is developed using Ubuntu 20.04. In order to execute this script, you need the
 following additional packages installed:
-* pst-tools (for converting PST files into EML files)
+* pst-tools (for extracting EML files from the PST)
 * mpack containing the munpack executable (for extracting attachments from the EML files)
 
 ### Installation of additional packages
 When using Ubuntu (or any debian based distributions), the above packages can be installed using
 the following line in a terminal:
 
-> sudo apt install pst-tools mpack
+> sudo apt install pst-utils mpack
