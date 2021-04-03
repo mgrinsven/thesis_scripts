@@ -1,22 +1,36 @@
 #!/bin/bash
+BASE_DIR=/home/build/thesis/enron
+TARGET_DIR=/home/data/thesis/enron
+
+ZIP_DIR=$BASE_DIR
+UNZIP_DIR=$BASE_DIR/PST
 
 CURRENT_DIR=$PWD
-UNZIP_DIR=$CURRENT_DIR/PST
+EXTRACTED_FILES_DIR="$TARGET_DIR/extracted_files"
+
 INCLUDE_EXT="*.xla *.xlk *.xll *.xls *.xlt *.xlw"
 EXCLUDE_EXT="!(*.eml|*.xla|*.xlk|*.xll|*.xls|*.xlt|*.xlw)"
 EXCLUDE_MD5="!(*.eml)"
+ONLY_XLS=false
 TOTAL_EML_FILES=0
 TOTAL_ATTACHMENTS=0
 TOTAL_SPREADSHEETS=0
 TOTAL_DUPLICATES=0
 
+MD5_MATCH=0
+
 declare -a arr=("*.xla" "*.xlk" "*.xll" "*.xls" "*.xlt" "*.xlw" "*.XLS" "*.XLT")
 declare -a MD5_ARRAY
 
+# Function to extract the ZIP files containing the PST files of the Enron
+# employees.
 extract_zip () {
-    unzip -d $UNZIP_DIR \*.zip
+    check_dir "$UNZIP_DIR"
+    unzip -d $UNZIP_DIR $ZIP_DIR/\*.zip
 }
 
+# Function to check if the directory is already created, if not, the directory
+# is created.
 check_dir () {
     if [ ! -d "$1" ]; then
         printf 'Directory %s does not exist, creating\n' "$1"
@@ -24,120 +38,122 @@ check_dir () {
     fi
 }
 
-
-match_files () {
-  shopt -s extglob
-  for tmp_file in "$1"/tmp/*; do
-    if [ ! -d "$tmp_file" ]; then
-      if [[ ! $tmp_file == *.desc ]]; then
-        tmp_md5=$(md5sum "$tmp_file" | cut -d " " -f1)
-        md5_match=0
-        for existing_file in "$1"/$EXCLUDE_MD5; do
-          if [ ! -d "$existing_file" ]; then
-            if [[ ! $exisiting_file == *.eml  ]]; then
-              exisiting_md5=$(md5sum "$existing_file" | cut -d " " -f1)
-              if [[ $tmp_md5 == $exisiting_md5 ]]; then
-                printf 'MD5 match of %s and %s\n' "$tmp_file" "$existing_file"
-                md5_math=1
-                TOTAL_DUPLICATES=$((TOTAL_DUPLICATES+1))
-              fi
-            fi
-          fi
-        done
-      fi
-      if [[ $md5_match == 0 ]];  then
-        if [[ $tmp_file == *.desc ]]; then
-          rm "$tmp_file"
-        else
-          mv "$tmp_file" "$1"
-        fi
-      else
-        rm "$tmp_file"
-      fi
+# If for any reason the extraction process failed and it needs to continue,
+# this function recalculates the md5 hash of the files in the extraction
+# directory and adds it to the MD5_ARRAY.
+populate_md5_array() {
+  MD5_ARRAY=()
+  for file in "$1"/*; do
+    if [ ! -d "$file" ]; then
+      file_md5=$(md5sum "$file" | cut -d " " -f1)
+      printf 'Adding %s from %s to array\n' "$file_md5" "$file"
+      MD5_ARRAY+=($file_md5)
     fi
   done
-  #rmdir "$1/tmp"
+}
+
+# A function that walks through the array of md5 hashes of previously extracted
+# attachments to see if the file has already been extracted before (i.e. is duplicate)
+# using hashes also identifies files that have been renamed
+compare_md5() {
+  tmp_md5=$(md5sum "$1" | cut -d " " -f1)
+  MD5_MATCH=0
+  for md5_value in "${MD5_ARRAY[@]}"; do
+    if [[ $tmp_md5 == $md5_value ]]; then
+      printf 'MD5 match of %s with md5 %s and %s\n' "$1" "$tmp_md5" "$md5_value"
+      MD5_MATCH=1
+      TOTAL_DUPLICATES=$((TOTAL_DUPLICATES+1))
+    fi
+  done
+}
+
+# A function that increases counters
+statistics () {
+  if [[ ( "$1" == *.eml ) ]]; then
+    TOTAL_EML_FILES=$((TOTAL_EML_FILES+1))
+  else
+    TOTAL_ATTACHMENTS=$((TOTAL_ATTACHMENTS+1))
+    if [[ ( "$1" == *.xls ) || ( "$1" == *.XLS ) ]]; then
+      TOTAL_SPREADSHEETS=$((TOTAL_SPREADSHEETS+1))
+    fi
+  fi
+  printf 'EML: %s, ATT: %s, XLS: %s, DUPP: %s\n' "$TOTAL_EML_FILES" "$TOTAL_ATTACHMENTS" "$TOTAL_SPREADSHEETS" "$TOTAL_DUPLICATES"
 }
 
 match_files_array () {
   shopt -s extglob
+  file_skip=false
+  md5_match=0
   for tmp_file in "$1"/tmp/*; do
     if [ ! -d "$tmp_file" ]; then
-      if [[ ! $tmp_file == *.desc || $tmp_file == *.URL ]]; then
-        tmp_md5=$(md5sum "$tmp_file" | cut -d " " -f1)
-        md5_match=0
-        for md5_value in "${MD5_ARRAY[@]}"; do
-          #printf 'Comparing MD5 %s and %s\n' "$md5_value" "$tmp_md5"
-          if [[ $tmp_md5 == $md5_value ]]; then
-            printf 'MD5 match of %s and %s\n' "$tmp_file" "$existing_file"
-            md5_math=1
-            TOTAL_DUPLICATES=$((TOTAL_DUPLICATES+1))
+      # The extraction process can generate some files that we are not interested
+      # in. Those files should be ignored.
+      if [[ ( "$tmp_file" == *.desc ) || ( "$tmp_file" == *.URL ) ]]; then
+        file_skip=true
+      else
+        # If we decide to only process excel sheets, then ONLY_XLS should be true
+        # and if the file extension indeed has xls or XLS, then the file should
+        # be processed.
+        if [[ $ONLY_XLS == true ]]; then
+          if [[ ( "$tmp_file" == *.xls ) || ( "$tmp_file" == *.XLS ) ]]; then
+            compare_md5 "$tmp_file" "$md5_match"
+            statistics "$tmp_file"
+          else
+            file_skip=true;
           fi
-        done
+        else
+          # Process all attachments (except the meta files mentioned above)
+          if [[ $ONLY_XLS == false ]]; then
+            compare_md5 "$tmp_file" "$md5_match"
+            statistics "$tmp_file"
+          else
+            file_skip=true
+          fi
+        fi
       fi
-      if [[ $md5_match == 0 ]];  then
-        if [[ $tmp_file == *.desc || $tmp_file == *.URL ]]; then
+      if [[ $MD5_MATCH == 0 ]];  then
+        if [[ $file_skip == true ]]; then
+          printf 'Skipping %s\n' "$tmp_file"
           rm "$tmp_file"
         else
           printf 'Adding %s to array\n' "$tmp_md5"
           MD5_ARRAY+=($tmp_md5)
-          mv "$tmp_file" "$1"
+          # Move the file to the extraxted files directory. If the filename
+          # alredy exists, rename the file (append a ~ to the filename).
+          # This is the -b option of the mv command.
+          mv -b "$tmp_file" "$EXTRACTED_FILES_DIR"
         fi
       else
         rm "$tmp_file"
       fi
     fi
+    file_skip=false
   done
-  #rmdir "$1/tmp"
 }
 
 walk_dir () {
     shopt -s nullglob dotglob
-    printf 'Yo what is this %s\n' "$2"
     for pathname in "$1"/*; do
         if [ -d "$pathname" ]; then
             CURRENT_DIR=$pathname
-            if [[ $2 == EXTRACT ]]; then
-              echo "Cleaning MD5_ARRAY"
-              MD5_ARRAY=()
-            fi
             walk_dir "$pathname" "$2"
         else
             if [[ $pathname == *.eml ]]; then
                 if [[ $2 == EXTRACT ]]; then
-                    printf 'EML file found %s\n' "$pathname"
                     check_dir "$CURRENT_DIR"/tmp
                     # Using -f to overwrite already existing files
                     munpack -f -C"$CURRENT_DIR"/tmp "$pathname"
                     match_files_array "$CURRENT_DIR"
+                    statistics "$pathname"
                 fi
             else
                 if [[ $pathname == *.pst ]]; then
                     if [[ $2 == EXTRACT_EML ]]; then
                         printf 'PST file found %s\n' "$pathname"
-                        readpst -D -j 8 -e -o $PWD/maildir "$pathname"
+#                        readpst -D -j 8 -e -o $PWD/maildir "$pathname"
+                        readpst -j 8 -e -o $TARGET_DIR/maildir "$pathname"
                     fi
                 fi
-            fi
-        fi
-    done
-}
-
-count_files () {
-    shopt -s nullglob dotglob
-    for pathname in "$1"/*; do
-        if [ -d "$pathname" ]; then
-            count_files "$pathname"
-        else
-            if [[ $pathname == *.eml ]]; then
-              echo "Found EML file $pathname"
-              TOTAL_EML_FILES=$((TOTAL_EML_FILES+1))
-            else
-              TOTAL_ATTACHMENTS=$((TOTAL_ATTACHMENTS+1))
-              if [[ $pathname == *.xls || $pathname == *.XLS || $pathname == *.xla || $pathname == *.xlk || $pathname == *.xll || $pathname == *.xlt ]]; then
-                echo "Found a spreadsheet $pathname"
-                TOTAL_SPREADSHEETS=$((TOTAL_SPREADSHEETS+1))
-              fi
             fi
         fi
     done
@@ -180,14 +196,16 @@ move_sheets () {
 }
 
 extract_zip
-check_dir "$PWD/maildir"
-walk_dir "$PWD" "EXTRACT_EML"
-walk_dir "$PWD/maildir" "EXTRACT"
-count_files "$PWD/maildir"
-clean_up "$PWD/maildir"
-check_dir "$PWD/extracted_files"
-move_sheets "$PWD/maildir" "$PWD/extracted_files"
-clean_up_all "$PWD/maildir"
+check_dir "$TARGET_DIR/maildir"
+check_dir "$EXTRACTED_FILES_DIR"
+
+walk_dir "$UNZIP_DIR" "EXTRACT_EML"
+walk_dir "$TARGET_DIR/maildir" "EXTRACT"
+#clean_up "$EXTRACTED_FILES_DIR"
+
+#move_sheets "$PWD/maildir" "$PWD/extracted_files"
+#move_sheets "$PWD/maildir" "$EXTRACTED_FILES_DIR"
+#clean_up_all "$PWD/maildir"
 
 echo "Total EML          $TOTAL_EML_FILES"
 echo "Total Attacthments $TOTAL_ATTACHMENTS"
